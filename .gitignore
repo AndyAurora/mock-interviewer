@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Saved session transcripts (may contain personal notes)
+sessions/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

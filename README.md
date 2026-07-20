@@ -1,0 +1,61 @@
+# Mock Interviewer
+
+A CLI tool that simulates a realistic technical coding interview with an AI interviewer. You pick a difficulty, get a coding problem, converse with the interviewer in real time, and receive rigorous, calibrated feedback across four dimensions at the end.
+
+Unlike a "grade my answer" tool, the interviewer behaves like a real person: it probes for clarifying questions, asks about time/space complexity before you code, pushes on edge cases without handing you the answer, and stays in character throughout. The feedback is evidence-grounded and honestly scored — not generic praise.
+
+## How it works
+
+1. Pick a difficulty (`easy` / `medium` / `hard`).
+2. A random problem is pulled from the problem bank.
+3. The AI interviewer presents the problem and conducts a live conversation.
+4. Type `done` when you're finished coding to trigger feedback generation.
+5. Feedback is printed and saved as JSON in `sessions/`.
+
+Type `quit` at any point to exit without feedback.
+
+## Feedback dimensions
+
+Each session is scored 1–10 on:
+
+- **Communication** — thinking out loud, clarifying questions, keeping the interviewer oriented.
+- **Problem Solving** — quality of approach, insight, complexity analysis, trade-offs.
+- **Technical Competency** — correctness and quality of the actual solution.
+- **Testing & Verification** — tracing examples, edge cases, catching your own bugs.
+
+Plus concrete strengths, actionable areas to improve, an honest summary, and a hire recommendation.
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+# add your ANTHROPIC_API_KEY to .env
+python main.py
+```
+
+You'll need an Anthropic API key from https://console.anthropic.com/settings/keys.
+
+## Project layout
+
+```
+mock-interviewer/
+├── main.py              # entry point — runs the session loop
+├── interviewer.py       # Claude API wrapper — chat() and get_feedback()
+├── prompts/
+│   ├── interviewer.txt  # system prompt for the AI interviewer persona
+│   └── feedback.txt     # system prompt for end-of-session feedback
+├── problems/
+│   └── problems.json    # problem bank (easy / medium / hard, tagged by topic)
+├── sessions/            # saved session transcripts (gitignored)
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+## Stack
+
+- Python 3.11+
+- Anthropic API (`claude-sonnet-4-6`)
+- `python-dotenv` for env management
+- No frameworks — plain Python CLI.
