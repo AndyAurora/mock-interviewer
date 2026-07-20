@@ -31,17 +31,23 @@ mock-interviewer/
 
 ## How it works
 
-1. User picks difficulty (easy/medium/hard)
-2. A random problem is pulled from `problems/problems.json`
-3. AI interviewer presents the problem and conducts a real-time conversation
-4. User types `done` when finished coding → triggers feedback generation
-5. Feedback is printed and saved as JSON in `sessions/`
+1. User picks an interviewer persona (Generic / Palantir / Jane Street / Google / Meta)
+2. User picks difficulty (easy/medium/hard)
+3. A random problem is pulled from `problems/problems.json`
+4. AI interviewer presents the problem and conducts a real-time conversation
+5. User types `done` when finished coding → triggers feedback generation
+6. Feedback is printed and saved as JSON in `sessions/`
 
-The interviewer persona (in `prompts/interviewer.txt`) is designed to:
+The base interviewer mechanics (in `prompts/interviewer.txt`) are designed to:
 - Probe clarifying questions if the user jumps straight to coding
 - Ask about time/space complexity before they code
 - Push back on edge cases without giving away answers
 - Stay in character — no breaking the fourth wall
+
+Company personas layer on top of the base via overlay files in
+`prompts/companies/` (one per company). The base holds the shared mechanics and
+exposes a `[[COMPANY_STYLE]]` slot; `Interviewer(problem, company=...)` composes
+the two, so a mechanics change only touches `interviewer.txt`.
 
 ---
 
@@ -49,31 +55,21 @@ The interviewer persona (in `prompts/interviewer.txt`) is designed to:
 
 These are roughly prioritized:
 
-### 1. Company-specific interviewer personas
-Right now there's one generic interviewer. The goal is personas for:
-- **Palantir** — heavy emphasis on communication and real-world problem framing
-- **Jane Street** — more math/logic focused, OCaml culture, very rigorous
-- **Google** — classic SWE, clean code, scalability discussion
-- **Meta** — product sense sometimes bleeds in, faster-paced
-
-User should be able to pick a company at the start. Each company gets its own system prompt in `prompts/`.
-
-### 2. Progress tracking across sessions
+### 1. Progress tracking across sessions
 Right now sessions are saved as JSON but nothing is analyzed. Build a `progress.py` that:
 - Reads all past sessions
 - Tracks scores over time per dimension
 - Shows trends ("your communication score improved from 5.2 → 7.1 over last 10 sessions")
 
-### 3. Expand problem bank
-Currently only 5 problems. Need:
-- More problems across difficulty levels
-- Problems tagged by topic (arrays, trees, graphs, DP, etc.)
-- User should be able to filter by topic
+### 2. Expand problem bank
+The bank now has 8 problems across easy/medium/hard, tagged by topic. Still want:
+- More problems at every difficulty level
+- User should be able to filter by topic (tags already exist in `problems.json`)
 
-### 4. Voice mode
+### 3. Voice mode
 Use Whisper API for speech-to-text so the user can speak instead of type. This makes it feel much closer to a real interview. Lower priority — get the core loop polished first.
 
-### 5. Web interface
+### 4. Web interface
 Eventually move from CLI to a simple web app (Flask or FastAPI backend, simple HTML/JS frontend). Not a priority yet.
 
 ---

@@ -6,13 +6,25 @@ Unlike a "grade my answer" tool, the interviewer behaves like a real person: it 
 
 ## How it works
 
-1. Pick a difficulty (`easy` / `medium` / `hard`).
-2. A random problem is pulled from the problem bank.
-3. The AI interviewer presents the problem and conducts a live conversation.
-4. Type `done` when you're finished coding to trigger feedback generation.
-5. Feedback is printed and saved as JSON in `sessions/`.
+1. Pick an interviewer persona (Generic, Palantir, Jane Street, Google, or Meta).
+2. Pick a difficulty (`easy` / `medium` / `hard`).
+3. A random problem is pulled from the problem bank.
+4. The AI interviewer presents the problem and conducts a live conversation.
+5. Type `done` when you're finished coding to trigger feedback generation.
+6. Feedback is printed and saved as JSON in `sessions/`.
 
 Type `quit` at any point to exit without feedback.
+
+## Interviewer personas
+
+Each company gets a distinct interviewing style layered on top of the shared
+interview mechanics:
+
+- **Palantir** — heavy emphasis on communication and real-world problem framing.
+- **Jane Street** — precise, rigorous, correctness-and-invariants focused.
+- **Google** — classic SWE: clean code, complexity analysis, scalability.
+- **Meta** — fast-paced and pragmatic; ship, then iterate.
+- **Generic** — a balanced, company-agnostic screen (the default).
 
 ## Feedback dimensions
 
@@ -43,8 +55,14 @@ mock-interviewer/
 ├── main.py              # entry point — runs the session loop
 ├── interviewer.py       # Claude API wrapper — chat() and get_feedback()
 ├── prompts/
-│   ├── interviewer.txt  # system prompt for the AI interviewer persona
-│   └── feedback.txt     # system prompt for end-of-session feedback
+│   ├── interviewer.txt  # base interviewer mechanics (shared by all personas)
+│   ├── feedback.txt     # system prompt for end-of-session feedback
+│   └── companies/       # per-company persona overlays
+│       ├── generic.txt
+│       ├── palantir.txt
+│       ├── jane_street.txt
+│       ├── google.txt
+│       └── meta.txt
 ├── problems/
 │   └── problems.json    # problem bank (easy / medium / hard, tagged by topic)
 ├── sessions/            # saved session transcripts (gitignored)

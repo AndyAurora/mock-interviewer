@@ -12,6 +12,18 @@ import anthropic
 
 MODEL = "claude-sonnet-4-6"
 PROMPTS_DIR = Path(__file__).parent / "prompts"
+COMPANIES_DIR = PROMPTS_DIR / "companies"
+
+# Selectable interviewer personas. Key -> display name. "generic" is the default
+# company-agnostic screen; the rest override tone and emphasis per company.
+COMPANIES = {
+    "generic": "Generic",
+    "palantir": "Palantir",
+    "jane_street": "Jane Street",
+    "google": "Google",
+    "meta": "Meta",
+}
+DEFAULT_COMPANY = "generic"
 
 # Max output tokens. Interview turns are short and conversational; feedback is a
 # structured JSON report and needs more room.
@@ -21,6 +33,16 @@ FEEDBACK_MAX_TOKENS = 2048
 
 def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
+
+
+def _load_company_style(company: str) -> str:
+    """Load a company's persona overlay, falling back to the generic default."""
+    if company not in COMPANIES:
+        company = DEFAULT_COMPANY
+    path = COMPANIES_DIR / f"{company}.txt"
+    if not path.exists():
+        path = COMPANIES_DIR / f"{DEFAULT_COMPANY}.txt"
+    return path.read_text(encoding="utf-8").strip()
 
 
 def _build_problem_block(problem: dict) -> str:
@@ -42,16 +64,19 @@ def _build_problem_block(problem: dict) -> str:
 class Interviewer:
     """A single interview session backed by the Claude API."""
 
-    def __init__(self, problem: dict, model: str = MODEL):
+    def __init__(
+        self, problem: dict, company: str = DEFAULT_COMPANY, model: str = MODEL
+    ):
         self.client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
         self.model = model
         self.problem = problem
+        self.company = company if company in COMPANIES else DEFAULT_COMPANY
         self.messages: list[dict] = []
 
         persona = _load_prompt("interviewer.txt")
         self.system_prompt = persona.replace(
-            "[[PROBLEM_BLOCK]]", _build_problem_block(problem)
-        )
+            "[[COMPANY_STYLE]]", _load_company_style(self.company)
+        ).replace("[[PROBLEM_BLOCK]]", _build_problem_block(problem))
 
     def chat(self, user_message: str) -> str:
         """Send a candidate message, return the interviewer's reply."""

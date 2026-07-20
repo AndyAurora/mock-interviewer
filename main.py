@@ -12,7 +12,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from interviewer import FeedbackError, Interviewer
+from interviewer import COMPANIES, DEFAULT_COMPANY, FeedbackError, Interviewer
 
 ROOT = Path(__file__).parent
 PROBLEMS_FILE = ROOT / "problems" / "problems.json"
@@ -51,6 +51,26 @@ def prompt_difficulty() -> str:
         if choice in DIFFICULTIES:
             return choice
         print("Please type one of: easy, medium, hard.")
+
+
+def prompt_company() -> str:
+    keys = list(COMPANIES)
+    print("Choose an interviewer:")
+    for i, key in enumerate(keys, start=1):
+        label = COMPANIES[key]
+        suffix = " (default)" if key == DEFAULT_COMPANY else ""
+        print(f"  {i}. {label}{suffix}")
+    while True:
+        raw = input(f"Enter a number (1-{len(keys)}) [1]: ").strip()
+        if not raw:
+            return DEFAULT_COMPANY
+        if raw.isdigit() and 1 <= int(raw) <= len(keys):
+            return keys[int(raw) - 1]
+        # Also accept the company name typed directly.
+        lowered = raw.lower().replace(" ", "_")
+        if lowered in COMPANIES:
+            return lowered
+        print(f"Please enter a number between 1 and {len(keys)}.")
 
 
 def print_banner() -> None:
@@ -105,13 +125,16 @@ def render_feedback(feedback: dict) -> None:
     print("=" * 64)
 
 
-def save_session(problem: dict, transcript: list[dict], feedback: dict | None) -> Path:
+def save_session(
+    problem: dict, company: str, transcript: list[dict], feedback: dict | None
+) -> Path:
     SESSIONS_DIR.mkdir(exist_ok=True)
     ts = datetime.now(timezone.utc)
     fname = f"{ts.strftime('%Y%m%d-%H%M%S')}-{problem['id']}.json"
     path = SESSIONS_DIR / fname
     record = {
         "timestamp": ts.isoformat(),
+        "company": company,
         "problem": {
             "id": problem["id"],
             "title": problem["title"],
@@ -134,12 +157,17 @@ def run() -> None:
     print_banner()
 
     problems = load_problems()
+    company = prompt_company()
     difficulty = prompt_difficulty()
     problem = pick_problem(problems, difficulty)
 
-    print(f"\nStarting a {difficulty} interview. Connecting you with your interviewer...\n")
+    company_label = COMPANIES[company]
+    print(
+        f"\nStarting a {difficulty} {company_label} interview. "
+        "Connecting you with your interviewer...\n"
+    )
 
-    interviewer = Interviewer(problem)
+    interviewer = Interviewer(problem, company=company)
     print(f"Interviewer: {interviewer.open()}\n")
 
     finished = False
@@ -182,7 +210,7 @@ def run() -> None:
         print(f"\n[Error generating feedback: {exc}]")
 
     try:
-        path = save_session(problem, interviewer.messages, feedback)
+        path = save_session(problem, company, interviewer.messages, feedback)
         print(f"\nSession saved to {path.relative_to(ROOT)}")
     except Exception as exc:
         print(f"\n[Could not save session: {exc}]")
