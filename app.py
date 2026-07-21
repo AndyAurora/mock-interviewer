@@ -11,6 +11,7 @@ Single-user local tool: one interview is held in module state at a time.
 
 import os
 import sys
+import threading
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
@@ -27,8 +28,18 @@ STATE: dict = {
     "interviewer": None,
     "problem": None,
     "company": DEFAULT_COMPANY,
-    "last_code": "",  # last code snapshot already shared with the interviewer
+    # Last code snapshot already present in the interviewer's conversation
+    # history (so a normal message doesn't re-send unchanged code).
+    "last_code": "",
+    # Last code snapshot a proactive observation was run against (so we don't
+    # re-observe identical code). Distinct from last_code because a *silent*
+    # observation leaves no code in history.
+    "last_observed_code": "",
 }
+
+# Serialize access to the shared interview so a proactive observation and a
+# candidate message can't mutate the conversation concurrently.
+LOCK = threading.Lock()
 
 
 @app.get("/")
@@ -62,6 +73,7 @@ def start():
         problem=problem,
         company=interviewer.company,
         last_code="",
+        last_observed_code="",
     )
     return jsonify(
         {
@@ -93,6 +105,7 @@ def _compose_message(text: str, code: str) -> str | None:
     if code_changed:
         parts.append(f"Here's my current code in the editor:\n```\n{code}\n```")
         STATE["last_code"] = code
+        STATE["last_observed_code"] = code
 
     if not parts:
         return None
@@ -101,58 +114,89 @@ def _compose_message(text: str, code: str) -> str | None:
 
 @app.post("/api/message")
 def message():
-    interviewer = STATE["interviewer"]
-    if interviewer is None:
-        return jsonify({"error": "No active interview. Start one first."}), 400
+    with LOCK:
+        interviewer = STATE["interviewer"]
+        if interviewer is None:
+            return jsonify({"error": "No active interview. Start one first."}), 400
 
-    data = request.get_json(force=True, silent=True) or {}
-    user_message = _compose_message(data.get("text", ""), data.get("code", ""))
-    if user_message is None:
-        return jsonify(
-            {"error": "Nothing to send — type a message or change your code."}
-        ), 400
+        data = request.get_json(force=True, silent=True) or {}
+        user_message = _compose_message(data.get("text", ""), data.get("code", ""))
+        if user_message is None:
+            return jsonify(
+                {"error": "Nothing to send — type a message or change your code."}
+            ), 400
 
-    try:
-        reply = interviewer.chat(user_message)
-    except Exception as exc:
-        return jsonify({"error": f"Interviewer error: {exc}"}), 502
+        try:
+            reply = interviewer.chat(user_message)
+        except Exception as exc:
+            return jsonify({"error": f"Interviewer error: {exc}"}), 502
+    return jsonify({"message": reply})
+
+
+@app.post("/api/observe")
+def observe():
+    """Proactive interjection: react to the candidate's current code, if warranted.
+
+    Returns ``{"message": None}`` when there's nothing new to observe or the
+    interviewer chose to stay silent.
+    """
+    with LOCK:
+        interviewer = STATE["interviewer"]
+        if interviewer is None:
+            return jsonify({"error": "No active interview."}), 400
+
+        data = request.get_json(force=True, silent=True) or {}
+        code = (data.get("code") or "").rstrip()
+        if not code or code == STATE["last_observed_code"]:
+            return jsonify({"message": None})  # nothing new — no API call
+
+        STATE["last_observed_code"] = code
+        try:
+            reply = interviewer.observe(code)
+        except Exception as exc:
+            return jsonify({"error": f"Interviewer error: {exc}"}), 502
+
+        # If the interviewer actually spoke, the code is now in history.
+        if reply is not None:
+            STATE["last_code"] = code
     return jsonify({"message": reply})
 
 
 @app.post("/api/feedback")
 def feedback():
-    interviewer = STATE["interviewer"]
-    if interviewer is None:
-        return jsonify({"error": "No active interview."}), 400
+    with LOCK:
+        interviewer = STATE["interviewer"]
+        if interviewer is None:
+            return jsonify({"error": "No active interview."}), 400
 
-    data = request.get_json(force=True, silent=True) or {}
-    # Make sure the candidate's final code is in the transcript before grading,
-    # even if they never clicked "Share code" after their last edits.
-    final_code = (data.get("code") or "").rstrip()
-    if final_code and final_code != STATE["last_code"]:
-        interviewer.messages.append(
-            {
-                "role": "user",
-                "content": f"Here's my final code:\n```\n{final_code}\n```",
-            }
-        )
-        STATE["last_code"] = final_code
+        data = request.get_json(force=True, silent=True) or {}
+        # Make sure the candidate's final code is in the transcript before grading,
+        # even if they never clicked "Share code" after their last edits.
+        final_code = (data.get("code") or "").rstrip()
+        if final_code and final_code != STATE["last_code"]:
+            interviewer.messages.append(
+                {
+                    "role": "user",
+                    "content": f"Here's my final code:\n```\n{final_code}\n```",
+                }
+            )
+            STATE["last_code"] = final_code
 
-    try:
-        result = interviewer.get_feedback()
-    except FeedbackError as exc:
-        return jsonify({"error": f"Could not parse feedback: {exc}"}), 502
-    except Exception as exc:
-        return jsonify({"error": f"Feedback error: {exc}"}), 502
+        try:
+            result = interviewer.get_feedback()
+        except FeedbackError as exc:
+            return jsonify({"error": f"Could not parse feedback: {exc}"}), 502
+        except Exception as exc:
+            return jsonify({"error": f"Feedback error: {exc}"}), 502
 
-    saved = None
-    try:
-        path = save_session(
-            STATE["problem"], STATE["company"], interviewer.messages, result
-        )
-        saved = path.name
-    except Exception:
-        pass
+        saved = None
+        try:
+            path = save_session(
+                STATE["problem"], STATE["company"], interviewer.messages, result
+            )
+            saved = path.name
+        except Exception:
+            pass
 
     return jsonify({"feedback": result, "saved": saved})
 

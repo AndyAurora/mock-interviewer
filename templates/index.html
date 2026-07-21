@@ -119,6 +119,16 @@
   .fb-actions { margin-top: 20px; display: flex; gap: 10px; }
   .banner { background: #7f1d1d; color: #fff; padding: 8px 14px; font-size: 14px; display: none; }
   .banner.show { display: block; }
+
+  .controls { display: flex; align-items: center; gap: 14px; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--accent); }
+  .toggle.disabled { opacity: .45; cursor: not-allowed; }
+  .toggle.listening span { color: var(--accent); font-weight: 650; }
+
+  /* Proactive interjection: a distinct, self-initiated interviewer remark */
+  .msg.interjection { border-left: 3px solid var(--accent); }
+  .msg.interjection .who::after { content: " · chimed in"; font-weight: 400; text-transform: none; letter-spacing: 0; }
 </style>
 </head>
 <body>
@@ -139,7 +149,15 @@
   <header id="topbar" style="display:none">
     <h1>Mock Interviewer</h1>
     <span class="prob" id="probLabel"></span>
-    <button id="doneBtn" class="primary">Done → Get feedback</button>
+    <div class="controls">
+      <label class="toggle" title="Interviewer chimes in on its own as you code (makes small background API calls)">
+        <input type="checkbox" id="proactive" /><span>Proactive interviewer</span>
+      </label>
+      <label class="toggle" id="voiceToggle" title="Talk to the interviewer and hear it reply (browser speech)">
+        <input type="checkbox" id="voice" /><span id="voiceLabel">🎤 Voice</span>
+      </label>
+      <button id="doneBtn" class="primary">Done → Get feedback</button>
+    </div>
   </header>
 
   <div id="interview">
@@ -183,7 +201,8 @@
   const RECS = { strong_hire: "Strong Hire", hire: "Hire", lean_hire: "Lean Hire", no_hire: "No Hire" };
 
   const $ = (id) => document.getElementById(id);
-  let busy = false;
+  let busy = false;      // a user-initiated request is running (disables buttons)
+  let inFlight = false;  // any API call touching the interview is running
 
   // Populate setup menus
   for (const [key, label] of Object.entries(COMPANIES)) {
@@ -239,6 +258,14 @@
     for (const id of ["sendBtn", "shareBtn", "doneBtn"]) $(id).disabled = state;
   }
 
+  // Render an interviewer message and, if voice is on, speak it.
+  function interviewerSays(text, opts = {}) {
+    const el = addMsg("interviewer", text);
+    if (opts.interjection) el.classList.add("interjection");
+    speak(text);
+    return el;
+  }
+
   let typingEl = null;
   function showTyping() {
     typingEl = document.createElement("div");
@@ -261,7 +288,7 @@
       $("topbar").style.display = "flex";
       $("interview").classList.add("active");
       $("probLabel").textContent = data.problem.title + " · " + data.problem.difficulty;
-      addMsg("interviewer", data.message);
+      interviewerSays(data.message);
       $("chat").focus();
     } catch (e) {
       banner(e.message);
@@ -272,7 +299,7 @@
 
   // ---- Send message (chat text + current code) ----
   async function send({ text, shareCode }) {
-    if (busy) return;
+    if (busy || inFlight) return;
     const code = $("code").value;
     const trimmed = (text || "").trim();
     if (!trimmed && !shareCode) return;
@@ -283,16 +310,16 @@
     else if (shareCode && trimmed) addMsg("candidate", "(with current code)", { chip: true });
 
     $("chat").value = "";
-    setBusy(true); showTyping();
+    setBusy(true); inFlight = true; showTyping();
     try {
       const data = await api("/api/message", { text: trimmed, code });
       hideTyping();
-      addMsg("interviewer", data.message);
+      interviewerSays(data.message);
     } catch (e) {
       hideTyping();
       addMsg("system", "⚠ " + e.message);
     } finally {
-      setBusy(false);
+      setBusy(false); inFlight = false;
       $("chat").focus();
     }
   }
@@ -367,9 +394,9 @@
   }
 
   $("doneBtn").addEventListener("click", async () => {
-    if (busy) return;
+    if (busy || inFlight) return;
     if (!confirm("End the interview and generate feedback?")) return;
-    setBusy(true);
+    setBusy(true); inFlight = true;
     $("doneBtn").textContent = "Grading…";
     try {
       const data = await api("/api/feedback", { code: $("code").value });
@@ -377,9 +404,126 @@
     } catch (e) {
       banner(e.message);
     } finally {
-      setBusy(false);
+      setBusy(false); inFlight = false;
       $("doneBtn").textContent = "Done → Get feedback";
     }
+  });
+
+  // ===== Proactive interviewer (debounced observation of the code editor) =====
+  const OBSERVE_IDLE_MS = 7000;      // fire after this long without typing
+  const OBSERVE_MIN_GAP_MS = 20000;  // don't interject more often than this
+  let proactiveOn = false, observeTimer = null, lastInterjectAt = 0, lastObserved = "";
+
+  $("proactive").addEventListener("change", (e) => {
+    proactiveOn = e.target.checked;
+    if (!proactiveOn && observeTimer) { clearTimeout(observeTimer); observeTimer = null; }
+  });
+
+  function scheduleObserve() {
+    if (!proactiveOn) return;
+    if (observeTimer) clearTimeout(observeTimer);
+    observeTimer = setTimeout(runObserve, OBSERVE_IDLE_MS);
+  }
+
+  async function runObserve() {
+    observeTimer = null;
+    if (!proactiveOn || inFlight) return;
+    const code = $("code").value.trim();
+    if (!code || code === lastObserved) return;
+    if (Date.now() - lastInterjectAt < OBSERVE_MIN_GAP_MS) return;
+    lastObserved = code;
+    inFlight = true;
+    try {
+      const data = await api("/api/observe", { code });
+      if (data.message) {
+        lastInterjectAt = Date.now();
+        interviewerSays(data.message, { interjection: true });
+      }
+    } catch (e) {
+      /* background call — fail quietly */
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  $("code").addEventListener("input", scheduleObserve);
+
+  // ===== Voice: browser speech-to-text (mic) + text-to-speech (replies) =====
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const ttsOK = "speechSynthesis" in window;
+  const voiceSupported = !!SR && ttsOK;
+  let voiceOn = false, recog = null, recognizing = false, speaking = false, finalBuf = "";
+
+  if (!voiceSupported) {
+    $("voice").disabled = true;
+    $("voiceToggle").classList.add("disabled");
+    $("voiceLabel").textContent = "🎤 Voice (unsupported)";
+    $("voiceToggle").title = "This browser doesn't support speech — try Chrome or Edge.";
+  }
+
+  function updateVoiceStatus() {
+    $("voiceToggle").classList.toggle("listening", voiceOn && recognizing && !speaking);
+    $("voiceLabel").textContent =
+      voiceOn && recognizing && !speaking ? "🎤 Listening…" : "🎤 Voice";
+  }
+
+  function initRecog() {
+    recog = new SR();
+    recog.continuous = true;
+    recog.interimResults = true;
+    recog.lang = "en-US";
+    recog.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalBuf += t + " ";
+        else interim += t;
+      }
+      $("chat").value = (finalBuf + interim).trim();
+      // Auto-send a completed utterance when we're free to.
+      if (finalBuf.trim() && !inFlight && !busy) {
+        const toSend = finalBuf.trim();
+        finalBuf = "";
+        $("chat").value = "";
+        send({ text: toSend });
+      }
+    };
+    recog.onend = () => { recognizing = false; if (voiceOn && !speaking) startRecog(); updateVoiceStatus(); };
+    recog.onerror = () => { /* e.g. no-speech; onend restarts */ };
+  }
+
+  function startRecog() {
+    if (!SR) return;
+    if (!recog) initRecog();
+    if (recognizing) return;
+    try { recog.start(); recognizing = true; } catch (_) { /* already started */ }
+    updateVoiceStatus();
+  }
+  function stopRecog() {
+    if (recog && recognizing) { try { recog.stop(); } catch (_) {} }
+    recognizing = false;
+    updateVoiceStatus();
+  }
+
+  function speak(text) {
+    if (!voiceOn || !ttsOK || !text) return;
+    // Don't read code aloud; keep prose only.
+    const clean = text.replace(/```[\s\S]*?```/g, ". (code shown on screen). ")
+                      .replace(/`([^`]+)`/g, "$1");
+    const u = new SpeechSynthesisUtterance(clean);
+    u.rate = 1.02; u.lang = "en-US";
+    speaking = true; stopRecog();               // avoid the mic hearing the reply
+    u.onend = u.onerror = () => { speaking = false; if (voiceOn) startRecog(); };
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+    updateVoiceStatus();
+  }
+
+  $("voice").addEventListener("change", (e) => {
+    voiceOn = e.target.checked;
+    if (voiceOn) { startRecog(); }
+    else { stopRecog(); if (ttsOK) window.speechSynthesis.cancel(); speaking = false; }
+    updateVoiceStatus();
   });
 </script>
 </body>

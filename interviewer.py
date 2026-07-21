@@ -30,6 +30,15 @@ DEFAULT_COMPANY = "generic"
 CHAT_MAX_TOKENS = 1024
 FEEDBACK_MAX_TOKENS = 2048
 
+# Stage-direction user turns (the interviewer kickoff and proactive code
+# observations) are prefixed with this so they can be filtered out of the
+# feedback transcript — they aren't things the candidate actually said.
+STAGE_PREFIX = "[The candidate"
+
+# observe() returns exactly this (and nothing else) when a real interviewer
+# would have nothing to say; the UI suppresses it.
+SILENT_TOKEN = "[SILENT]"
+
 
 def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
@@ -100,14 +109,48 @@ class Interviewer:
             "and present the problem, then invite them to begin.]"
         )
 
+    def observe(self, code: str) -> str | None:
+        """Let the interviewer proactively react to the candidate's current code.
+
+        The interviewer chimes in only when a real one naturally would; otherwise
+        it stays silent and this returns ``None`` (leaving history untouched, so a
+        silent observation costs nothing in the transcript).
+        """
+        probe = (
+            "[The candidate is working quietly and has not addressed you directly. "
+            "Their code editor currently shows:\n```\n"
+            f"{code}\n```\n"
+            "If — and only if — a real interviewer would naturally speak up right "
+            "now, say that one short remark: nudge a bug you spot, ask about their "
+            "approach or its time/space complexity, point at an edge case they seem "
+            "to be missing, or ask them to explain what they're doing. Do not repeat "
+            "a point you've already made. If there is genuinely nothing worth "
+            f"interrupting for, reply with exactly {SILENT_TOKEN} and nothing else.]"
+        )
+        self.messages.append({"role": "user", "content": probe})
+
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=CHAT_MAX_TOKENS,
+            system=self.system_prompt,
+            messages=self.messages,
+        )
+        reply = "".join(b.text for b in response.content if b.type == "text").strip()
+
+        if not reply or SILENT_TOKEN in reply:
+            self.messages.pop()  # discard the probe — nothing was said
+            return None
+
+        self.messages.append({"role": "assistant", "content": reply})
+        return reply
+
     def _transcript(self) -> str:
         """Render the conversation as plain text for the evaluator."""
         lines = []
         for msg in self.messages:
-            # Skip the internal kickoff instruction so it doesn't pollute scoring.
-            if msg["role"] == "user" and msg["content"].startswith(
-                "[The candidate has just joined"
-            ):
+            # Skip stage-direction turns (kickoff, proactive observations) so they
+            # don't pollute scoring — they aren't things the candidate said.
+            if msg["role"] == "user" and msg["content"].startswith(STAGE_PREFIX):
                 continue
             speaker = "Interviewer" if msg["role"] == "assistant" else "Candidate"
             lines.append(f"{speaker}: {msg['content']}")
