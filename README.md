@@ -43,16 +43,42 @@ Plus concrete strengths, actionable areas to improve, an honest summary, and a h
 pip install -r requirements.txt
 cp .env.example .env
 # add your ANTHROPIC_API_KEY to .env
-python main.py
 ```
 
 You'll need an Anthropic API key from https://console.anthropic.com/settings/keys.
+
+## Running
+
+**Web UI (recommended)** — a two-panel layout with a real code editor beside the
+chat, so you can write multi-line code without every newline sending a turn:
+
+```bash
+python app.py
+# then open http://127.0.0.1:5000
+```
+
+Write code freely in the editor (Enter is just a newline). Send a chat message to
+talk to the interviewer — your current code is included automatically when it has
+changed — or click **Share code** to show it without a message. Click **Done →
+Get feedback** to end and grade the session.
+
+**CLI** — simpler, no browser, but every Enter submits a turn:
+
+```bash
+python main.py
+```
+
+Both front-ends share the same backend (`interviewer.py`) and save sessions to
+`sessions/`.
 
 ## Project layout
 
 ```
 mock-interviewer/
-├── main.py              # entry point — runs the session loop
+├── app.py               # web UI — Flask server over the same backend
+├── templates/
+│   └── index.html       # two-panel web front-end (code editor + chat)
+├── main.py              # CLI entry point — runs the session loop
 ├── interviewer.py       # Claude API wrapper — chat() and get_feedback()
 ├── prompts/
 │   ├── interviewer.txt  # base interviewer mechanics (shared by all personas)

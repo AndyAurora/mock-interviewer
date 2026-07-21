@@ -49,6 +49,14 @@ Company personas layer on top of the base via overlay files in
 exposes a `[[COMPANY_STYLE]]` slot; `Interviewer(problem, company=...)` composes
 the two, so a mechanics change only touches `interviewer.txt`.
 
+There are two front-ends over the same backend (`interviewer.py`):
+- `main.py` — the original CLI (every Enter submits a turn).
+- `app.py` — a local Flask web UI (`python app.py` → http://127.0.0.1:5000) with
+  a two-panel layout: a persistent code editor beside the chat. The editor solves
+  the CLI's multi-line-code problem — Enter is a newline, and the candidate's
+  current code is sent to the interviewer when it changes (or via "Share code").
+  Template is `templates/index.html` (self-contained HTML/CSS/JS, no build step).
+
 ---
 
 ## What to build next
@@ -68,9 +76,6 @@ The bank now has 8 problems across easy/medium/hard, tagged by topic. Still want
 
 ### 3. Voice mode
 Use Whisper API for speech-to-text so the user can speak instead of type. This makes it feel much closer to a real interview. Lower priority — get the core loop polished first.
-
-### 4. Web interface
-Eventually move from CLI to a simple web app (Flask or FastAPI backend, simple HTML/JS frontend). Not a priority yet.
 
 ---
 

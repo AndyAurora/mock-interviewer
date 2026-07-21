@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mock Interviewer</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #e2e5ea;
+    --text: #1c2024;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --interviewer: #eef2ff;
+    --candidate: #ecfdf5;
+    --code-bg: #0f172a;
+    --code-fg: #e2e8f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a21; --border: #2a2f3a; --text: #e5e7eb;
+      --muted: #9aa3b2; --accent: #3b82f6; --interviewer: #1e2637;
+      --candidate: #142a22; --code-bg: #0b0e14; --code-fg: #d7dde8;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header .prob { color: var(--muted); font-size: 13px; }
+  button {
+    font: inherit; cursor: pointer; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); border-radius: 8px; padding: 8px 14px;
+  }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  select {
+    font: inherit; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  }
+
+  /* Setup screen */
+  #setup {
+    margin: auto; max-width: 440px; width: 90%; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 14px; padding: 28px;
+  }
+  #setup h2 { margin: 0 0 4px; }
+  #setup p { color: var(--muted); margin: 0 0 20px; }
+  #setup label { display: block; font-weight: 600; margin: 14px 0 6px; }
+  #setup select { width: 100%; }
+  #setup .go { margin-top: 22px; width: 100%; }
+
+  /* Interview screen */
+  #interview { flex: 1; display: none; min-height: 0; }
+  #interview.active { display: flex; }
+  .col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .editor-col { flex: 1.1; border-right: 1px solid var(--border); }
+  .chat-col { flex: 1; }
+  .col-head {
+    padding: 8px 14px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--muted); border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+
+  #code {
+    flex: 1; width: 100%; resize: none; border: 0; outline: none; padding: 14px;
+    font: 13.5px/1.55 "SFMono-Regular", Menlo, Consolas, monospace;
+    background: var(--code-bg); color: var(--code-fg); tab-size: 4;
+  }
+  .editor-actions {
+    display: flex; gap: 8px; align-items: center; padding: 8px 12px;
+    border-top: 1px solid var(--border); background: var(--panel);
+  }
+  .editor-actions .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+  #transcript { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 88%; padding: 10px 13px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg .who { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 3px; letter-spacing: .03em; }
+  .msg.interviewer { background: var(--interviewer); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .msg.candidate { background: var(--candidate); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .msg.system { align-self: center; color: var(--muted); font-size: 13px; background: transparent; font-style: italic; }
+  .msg .chip { display: inline-block; font-size: 12px; color: var(--muted); font-style: italic; }
+  .typing { align-self: flex-start; color: var(--muted); font-size: 13px; padding: 4px 6px; }
+
+  .chat-input { border-top: 1px solid var(--border); padding: 10px; background: var(--panel); }
+  .chat-input textarea {
+    width: 100%; resize: none; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; font: inherit; background: var(--bg); color: var(--text); min-height: 46px;
+  }
+  .chat-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .chat-row .hint { color: var(--muted); font-size: 12px; margin-right: auto; }
+
+  /* Feedback overlay */
+  #feedback { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none;
+    align-items: flex-start; justify-content: center; overflow-y: auto; padding: 30px 16px; z-index: 20; }
+  #feedback.active { display: flex; }
+  .fb-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 720px; width: 100%; padding: 26px; }
+  .fb-card h2 { margin: 0 0 4px; }
+  .fb-saved { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .dim { border-top: 1px solid var(--border); padding: 12px 0; }
+  .dim-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .dim-head .name { font-weight: 650; }
+  .dim-head .score { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .bar { height: 6px; background: var(--border); border-radius: 4px; margin: 7px 0; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .dim p { margin: 6px 0 0; color: var(--text); }
+  .fb-list { margin: 6px 0 0; padding-left: 20px; }
+  .rec { margin-top: 16px; font-size: 17px; font-weight: 700; }
+  .fb-actions { margin-top: 20px; display: flex; gap: 10px; }
+  .banner { background: #7f1d1d; color: #fff; padding: 8px 14px; font-size: 14px; display: none; }
+  .banner.show { display: block; }
+</style>
+</head>
+<body>
+  <div id="banner" class="banner"></div>
+
+  <!-- SETUP -->
+  <section id="setup">
+    <h2>Mock Interviewer</h2>
+    <p>Pick an interviewer and difficulty to begin a live technical interview.</p>
+    <label for="company">Interviewer</label>
+    <select id="company"></select>
+    <label for="difficulty">Difficulty</label>
+    <select id="difficulty"></select>
+    <button id="startBtn" class="primary go">Start interview</button>
+  </section>
+
+  <!-- INTERVIEW -->
+  <header id="topbar" style="display:none">
+    <h1>Mock Interviewer</h1>
+    <span class="prob" id="probLabel"></span>
+    <button id="doneBtn" class="primary">Done → Get feedback</button>
+  </header>
+
+  <div id="interview">
+    <div class="col editor-col">
+      <div class="col-head">Code editor</div>
+      <textarea id="code" spellcheck="false" placeholder="# Write your solution here.
+# Enter adds a new line — it won't send.
+# Use 'Share code' or send a chat message to show the interviewer your code."></textarea>
+      <div class="editor-actions">
+        <button id="shareBtn">Share code with interviewer</button>
+        <span class="hint">Tab inserts spaces · Enter = newline</span>
+      </div>
+    </div>
+    <div class="col chat-col">
+      <div class="col-head">Interviewer</div>
+      <div id="transcript"></div>
+      <div class="chat-input">
+        <textarea id="chat" placeholder="Talk to your interviewer… (Enter to send, Shift+Enter for a new line)"></textarea>
+        <div class="chat-row">
+          <span class="hint">Your current code is included when it has changed.</span>
+          <button id="sendBtn" class="primary">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FEEDBACK -->
+  <div id="feedback"><div class="fb-card" id="fbCard"></div></div>
+
+<script>
+  const COMPANIES = {{ companies | tojson }};
+  const DIFFICULTIES = {{ difficulties | tojson }};
+  const DEFAULT_COMPANY = {{ default_company | tojson }};
+
+  const DIMS = [
+    ["communication", "Communication"],
+    ["problem_solving", "Problem Solving"],
+    ["technical_competency", "Technical Competency"],
+    ["testing_and_verification", "Testing & Verification"],
+  ];
+  const RECS = { strong_hire: "Strong Hire", hire: "Hire", lean_hire: "Lean Hire", no_hire: "No Hire" };
+
+  const $ = (id) => document.getElementById(id);
+  let busy = false;
+
+  // Populate setup menus
+  for (const [key, label] of Object.entries(COMPANIES)) {
+    const o = document.createElement("option");
+    o.value = key; o.textContent = label + (key === DEFAULT_COMPANY ? " (default)" : "");
+    if (key === DEFAULT_COMPANY) o.selected = true;
+    $("company").appendChild(o);
+  }
+  for (const d of DIFFICULTIES) {
+    const o = document.createElement("option");
+    o.value = d; o.textContent = d[0].toUpperCase() + d.slice(1);
+    if (d === "medium") o.selected = true;
+    $("difficulty").appendChild(o);
+  }
+
+  function banner(msg) {
+    const b = $("banner");
+    if (!msg) { b.classList.remove("show"); return; }
+    b.textContent = msg; b.classList.add("show");
+    setTimeout(() => b.classList.remove("show"), 6000);
+  }
+
+  async function api(path, body) {
+    const res = await fetch(path, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ("Request failed (" + res.status + ")"));
+    return data;
+  }
+
+  function addMsg(role, text, opts = {}) {
+    const el = document.createElement("div");
+    el.className = "msg " + role;
+    if (role !== "system") {
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = role === "interviewer" ? "Interviewer" : "You";
+      el.appendChild(who);
+    }
+    const body = document.createElement("div");
+    if (opts.chip) { body.className = "chip"; body.textContent = text; }
+    else { body.textContent = text; }
+    el.appendChild(body);
+    $("transcript").appendChild(el);
+    $("transcript").scrollTop = $("transcript").scrollHeight;
+    return el;
+  }
+
+  function setBusy(state) {
+    busy = state;
+    for (const id of ["sendBtn", "shareBtn", "doneBtn"]) $(id).disabled = state;
+  }
+
+  let typingEl = null;
+  function showTyping() {
+    typingEl = document.createElement("div");
+    typingEl.className = "typing";
+    typingEl.textContent = "Interviewer is thinking…";
+    $("transcript").appendChild(typingEl);
+    $("transcript").scrollTop = $("transcript").scrollHeight;
+  }
+  function hideTyping() { if (typingEl) { typingEl.remove(); typingEl = null; } }
+
+  // ---- Start ----
+  $("startBtn").addEventListener("click", async () => {
+    $("startBtn").disabled = true;
+    $("startBtn").textContent = "Connecting…";
+    try {
+      const data = await api("/api/start", {
+        company: $("company").value, difficulty: $("difficulty").value,
+      });
+      $("setup").style.display = "none";
+      $("topbar").style.display = "flex";
+      $("interview").classList.add("active");
+      $("probLabel").textContent = data.problem.title + " · " + data.problem.difficulty;
+      addMsg("interviewer", data.message);
+      $("chat").focus();
+    } catch (e) {
+      banner(e.message);
+      $("startBtn").disabled = false;
+      $("startBtn").textContent = "Start interview";
+    }
+  });
+
+  // ---- Send message (chat text + current code) ----
+  async function send({ text, shareCode }) {
+    if (busy) return;
+    const code = $("code").value;
+    const trimmed = (text || "").trim();
+    if (!trimmed && !shareCode) return;
+
+    // Optimistic candidate bubble
+    if (trimmed) addMsg("candidate", trimmed);
+    if (shareCode && !trimmed) addMsg("candidate", "(shared current code)", { chip: true });
+    else if (shareCode && trimmed) addMsg("candidate", "(with current code)", { chip: true });
+
+    $("chat").value = "";
+    setBusy(true); showTyping();
+    try {
+      const data = await api("/api/message", { text: trimmed, code });
+      hideTyping();
+      addMsg("interviewer", data.message);
+    } catch (e) {
+      hideTyping();
+      addMsg("system", "⚠ " + e.message);
+    } finally {
+      setBusy(false);
+      $("chat").focus();
+    }
+  }
+
+  $("sendBtn").addEventListener("click", () => send({ text: $("chat").value }));
+  $("shareBtn").addEventListener("click", () => send({ text: "", shareCode: true }));
+
+  // Enter sends in chat; Shift+Enter = newline
+  $("chat").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send({ text: $("chat").value }); }
+  });
+
+  // Tab inserts 4 spaces in the code editor (don't move focus)
+  $("code").addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const el = e.target, s = el.selectionStart, en = el.selectionEnd;
+      el.value = el.value.slice(0, s) + "    " + el.value.slice(en);
+      el.selectionStart = el.selectionEnd = s + 4;
+    }
+  });
+
+  // ---- Feedback ----
+  function renderFeedback(fb, saved) {
+    const c = $("fbCard");
+    c.innerHTML = "";
+    const h = document.createElement("h2"); h.textContent = "Feedback"; c.appendChild(h);
+    if (saved) {
+      const s = document.createElement("div"); s.className = "fb-saved";
+      s.textContent = "Session saved to sessions/" + saved; c.appendChild(s);
+    }
+    const scores = fb.scores || {}, texts = fb.feedback || {};
+    for (const [key, label] of DIMS) {
+      const score = scores[key];
+      const d = document.createElement("div"); d.className = "dim";
+      const head = document.createElement("div"); head.className = "dim-head";
+      head.innerHTML = `<span class="name">${label}</span><span class="score">${score ?? "?"}/10</span>`;
+      d.appendChild(head);
+      const bar = document.createElement("div"); bar.className = "bar";
+      const span = document.createElement("span");
+      span.style.width = ((Number(score) || 0) * 10) + "%"; bar.appendChild(span); d.appendChild(bar);
+      if (texts[key]) { const p = document.createElement("p"); p.textContent = texts[key]; d.appendChild(p); }
+      c.appendChild(d);
+    }
+    const listBlock = (title, items) => {
+      if (!items || !items.length) return;
+      const wrap = document.createElement("div"); wrap.className = "dim";
+      const t = document.createElement("div"); t.className = "dim-head";
+      t.innerHTML = `<span class="name">${title}</span>`; wrap.appendChild(t);
+      const ul = document.createElement("ul"); ul.className = "fb-list";
+      for (const it of items) { const li = document.createElement("li"); li.textContent = it; ul.appendChild(li); }
+      wrap.appendChild(ul); c.appendChild(wrap);
+    };
+    listBlock("Strengths", fb.strengths);
+    listBlock("Areas to improve", fb.areas_to_improve);
+    if (fb.overall_summary) {
+      const d = document.createElement("div"); d.className = "dim";
+      d.innerHTML = `<div class="dim-head"><span class="name">Overall</span></div>`;
+      const p = document.createElement("p"); p.textContent = fb.overall_summary; d.appendChild(p); c.appendChild(d);
+    }
+    if (fb.recommendation) {
+      const r = document.createElement("div"); r.className = "rec";
+      r.textContent = "Recommendation: " + (RECS[fb.recommendation] || fb.recommendation); c.appendChild(r);
+    }
+    const actions = document.createElement("div"); actions.className = "fb-actions";
+    const again = document.createElement("button"); again.className = "primary";
+    again.textContent = "New interview"; again.onclick = () => location.reload();
+    const close = document.createElement("button"); close.textContent = "Close";
+    close.onclick = () => $("feedback").classList.remove("active");
+    actions.append(again, close); c.appendChild(actions);
+    $("feedback").classList.add("active");
+  }
+
+  $("doneBtn").addEventListener("click", async () => {
+    if (busy) return;
+    if (!confirm("End the interview and generate feedback?")) return;
+    setBusy(true);
+    $("doneBtn").textContent = "Grading…";
+    try {
+      const data = await api("/api/feedback", { code: $("code").value });
+      renderFeedback(data.feedback, data.saved);
+    } catch (e) {
+      banner(e.message);
+    } finally {
+      setBusy(false);
+      $("doneBtn").textContent = "Done → Get feedback";
+    }
+  });
+</script>
+</body>
+</html>
