@@ -125,6 +125,7 @@
   .toggle input { accent-color: var(--accent); }
   .toggle.disabled { opacity: .45; cursor: not-allowed; }
   .toggle.listening span { color: var(--accent); font-weight: 650; }
+  #micBtn.listening { background: #dc2626; color: #fff; border-color: transparent; }
 
   /* Proactive interjection: a distinct, self-initiated interviewer remark */
   .msg.interjection { border-left: 3px solid var(--accent); }
@@ -178,6 +179,7 @@
         <textarea id="chat" placeholder="Talk to your interviewer… (Enter to send, Shift+Enter for a new line)"></textarea>
         <div class="chat-row">
           <span class="hint">Your current code is included when it has changed.</span>
+          <button id="micBtn" style="display:none">🎤 Talk</button>
           <button id="sendBtn" class="primary">Send</button>
         </div>
       </div>
@@ -453,6 +455,9 @@
   const ttsOK = "speechSynthesis" in window;
   const voiceSupported = !!SR && ttsOK;
   let voiceOn = false, recog = null, recognizing = false, speaking = false, finalBuf = "";
+  let voiceFatal = false, heardSpeech = false;
+
+  function voiceNote(msg) { addMsg("system", msg); }
 
   if (!voiceSupported) {
     $("voice").disabled = true;
@@ -461,17 +466,31 @@
     $("voiceToggle").title = "This browser doesn't support speech — try Chrome or Edge.";
   }
 
+  // Turn-based listening: the mic runs for ONE utterance, then stops — no
+  // continuous restart loop (that was flashing the OS mic indicator). The mic
+  // re-opens on its own after the interviewer finishes speaking a reply.
+  function setMic(state) {
+    // state: "hidden" | "idle" | "listening"
+    const b = $("micBtn");
+    b.style.display = state === "hidden" ? "none" : "";
+    b.classList.toggle("listening", state === "listening");
+    b.textContent = state === "listening" ? "🔴 Listening… (click to stop)" : "🎤 Talk";
+    $("voiceToggle").classList.toggle("listening", state === "listening");
+  }
   function updateVoiceStatus() {
-    $("voiceToggle").classList.toggle("listening", voiceOn && recognizing && !speaking);
-    $("voiceLabel").textContent =
-      voiceOn && recognizing && !speaking ? "🎤 Listening…" : "🎤 Voice";
+    setMic(!voiceOn ? "hidden" : (recognizing ? "listening" : "idle"));
   }
 
   function initRecog() {
     recog = new SR();
-    recog.continuous = true;
+    recog.continuous = false;   // one utterance per listen
     recog.interimResults = true;
     recog.lang = "en-US";
+
+    recog.onstart = () => { recognizing = true; updateVoiceStatus(); };
+    recog.onspeechstart = () => {
+      if (!heardSpeech) { heardSpeech = true; voiceNote("🎤 Got it — the mic is picking you up."); }
+    };
     recog.onresult = (e) => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -480,26 +499,37 @@
         else interim += t;
       }
       $("chat").value = (finalBuf + interim).trim();
-      // Auto-send a completed utterance when we're free to.
-      if (finalBuf.trim() && !inFlight && !busy) {
-        const toSend = finalBuf.trim();
-        finalBuf = "";
-        $("chat").value = "";
-        send({ text: toSend });
+    };
+    recog.onend = () => {
+      recognizing = false;
+      updateVoiceStatus();
+      // Send whatever was captured this turn (do NOT auto-restart the mic here).
+      const said = finalBuf.trim();
+      finalBuf = "";
+      if (said && !inFlight && !busy) { $("chat").value = ""; send({ text: said }); }
+    };
+    recog.onerror = (e) => {
+      const code = (e && e.error) || "unknown";
+      if (code === "no-speech" || code === "aborted") return; // benign
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        voiceFatal = true; voiceOn = false; $("voice").checked = false; stopListen();
+        voiceNote("🎤 Microphone is blocked. Click the tune/lock icon at the left of Chrome's address bar → allow the microphone → then toggle Voice on again.");
+        updateVoiceStatus();
+      } else if (code === "network") {
+        voiceNote("🎤 Voice needs an internet connection (Chrome streams audio to Google).");
+      } else {
+        voiceNote("🎤 Voice error: " + code);
       }
     };
-    recog.onend = () => { recognizing = false; if (voiceOn && !speaking) startRecog(); updateVoiceStatus(); };
-    recog.onerror = () => { /* e.g. no-speech; onend restarts */ };
   }
 
-  function startRecog() {
-    if (!SR) return;
+  function startListen() {
+    if (!SR || voiceFatal || !voiceOn || speaking || recognizing) return;
     if (!recog) initRecog();
-    if (recognizing) return;
-    try { recog.start(); recognizing = true; } catch (_) { /* already started */ }
-    updateVoiceStatus();
+    finalBuf = "";
+    try { recog.start(); } catch (_) { /* transient — mid start/stop */ }
   }
-  function stopRecog() {
+  function stopListen() {
     if (recog && recognizing) { try { recog.stop(); } catch (_) {} }
     recognizing = false;
     updateVoiceStatus();
@@ -507,23 +537,38 @@
 
   function speak(text) {
     if (!voiceOn || !ttsOK || !text) return;
-    // Don't read code aloud; keep prose only.
     const clean = text.replace(/```[\s\S]*?```/g, ". (code shown on screen). ")
                       .replace(/`([^`]+)`/g, "$1");
     const u = new SpeechSynthesisUtterance(clean);
     u.rate = 1.02; u.lang = "en-US";
-    speaking = true; stopRecog();               // avoid the mic hearing the reply
-    u.onend = u.onerror = () => { speaking = false; if (voiceOn) startRecog(); };
+    speaking = true; stopListen();               // don't let the mic hear the reply
+    u.onend = u.onerror = () => {
+      speaking = false;
+      if (voiceOn) startListen();                 // hands-free: re-open mic for the next turn
+    };
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(u);
-    updateVoiceStatus();
   }
+
+  $("micBtn").addEventListener("click", () => {
+    if (!voiceOn) return;
+    if (recognizing) stopListen();   // finish this turn now
+    else startListen();
+  });
 
   $("voice").addEventListener("change", (e) => {
     voiceOn = e.target.checked;
-    if (voiceOn) { startRecog(); }
-    else { stopRecog(); if (ttsOK) window.speechSynthesis.cancel(); speaking = false; }
-    updateVoiceStatus();
+    if (voiceOn) {
+      voiceFatal = false; heardSpeech = false; finalBuf = "";
+      voiceNote("🎤 Voice on. Click “🎤 Talk” (or just start speaking), then pause when you finish and I'll send it. I speak my replies and re-open the mic after each one.");
+      updateVoiceStatus();
+      startListen();
+    } else {
+      stopListen();
+      if (ttsOK) window.speechSynthesis.cancel();
+      speaking = false;
+      updateVoiceStatus();
+    }
   });
 </script>
 </body>
