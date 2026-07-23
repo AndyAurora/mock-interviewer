@@ -516,7 +516,7 @@
         voiceNote("🎤 Microphone is blocked. Click the tune/lock icon at the left of Chrome's address bar → allow the microphone → then toggle Voice on again.");
         updateVoiceStatus();
       } else if (code === "network") {
-        voiceNote("🎤 Voice needs an internet connection (Chrome streams audio to Google).");
+        voiceNote("🎤 Voice input needs Google Chrome. This browser (Arc, Brave, Chromium, etc.) doesn't include Google's speech key, so the mic can't transcribe. Open this page in Google Chrome — or ask for Whisper-based voice that works in any browser.");
       } else {
         voiceNote("🎤 Voice error: " + code);
       }

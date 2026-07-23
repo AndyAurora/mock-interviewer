@@ -62,6 +62,13 @@ talk to the interviewer — your current code is included automatically when it 
 changed — or click **Share code** to show it without a message. Click **Done →
 Get feedback** to end and grade the session.
 
+Optional toggles in the top bar:
+- **Proactive interviewer** — the interviewer chimes in on its own as you code
+  (makes small background API calls; off by default).
+- **🎤 Voice** — talk to the interviewer and hear it reply. Voice **input requires
+  Google Chrome** (it uses Google's speech service; Arc/Brave/Chromium/Safari
+  won't transcribe). Spoken replies work in any browser.
+
 **CLI** — simpler, no browser, but every Enter submits a turn:
 
 ```bash
